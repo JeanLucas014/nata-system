@@ -77,7 +77,10 @@ function LoginScreen() {
   const [email, setEmail] = useState('');
   const [pass, setPass] = useState('');
   const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
   const [loading, setLoading] = useState(false);
+  const [showPass, setShowPass] = useState(false);
+  const [mode, setMode] = useState('login'); // 'login' or 'forgot'
 
   const handleLogin = async () => {
     if (!email || !pass) { setError('Preencha todos os campos'); return; }
@@ -87,6 +90,18 @@ function LoginScreen() {
     if (error) {
       setError(error.message === 'Invalid login credentials' ? 'E-mail ou senha incorretos' : error.message);
     }
+    setLoading(false);
+  };
+
+  const handleForgot = async () => {
+    if (!email) { setError('Digite seu e-mail'); return; }
+    setLoading(true);
+    setError('');
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: window.location.origin,
+    });
+    if (error) { setError(error.message); }
+    else { setSuccess('E-mail de recuperação enviado! Verifique sua caixa de entrada.'); }
     setLoading(false);
   };
 
@@ -100,21 +115,59 @@ function LoginScreen() {
           </div>
           <div style={{fontSize:13,color:G[400],marginTop:4,letterSpacing:'0.08em',fontWeight:500}}>SYSTEM</div>
         </div>
-        <div style={{marginBottom:20}}>
-          <label style={{display:'block',fontSize:13,fontWeight:600,color:G[700],marginBottom:6}}>E-mail</label>
-          <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="seu@email.com" onKeyDown={e=>e.key==='Enter'&&handleLogin()}
-            style={{width:'100%',padding:'12px 14px',border:`1px solid ${G[200]}`,borderRadius:10,fontSize:14,outline:'none',fontFamily:'inherit',background:G[50],boxSizing:'border-box'}}/>
-        </div>
-        <div style={{marginBottom:24}}>
-          <label style={{display:'block',fontSize:13,fontWeight:600,color:G[700],marginBottom:6}}>Senha</label>
-          <input type="password" value={pass} onChange={e=>setPass(e.target.value)} placeholder="••••••••" onKeyDown={e=>e.key==='Enter'&&handleLogin()}
-            style={{width:'100%',padding:'12px 14px',border:`1px solid ${G[200]}`,borderRadius:10,fontSize:14,outline:'none',fontFamily:'inherit',background:G[50],boxSizing:'border-box'}}/>
-        </div>
-        {error && <div style={{background:'#fef2f2',border:'1px solid #fecaca',color:'#dc2626',fontSize:13,padding:'10px 14px',borderRadius:8,marginBottom:16,display:'flex',alignItems:'center',gap:8}}><Icon name="alert" size={16}/>{error}</div>}
-        <button onClick={handleLogin} disabled={loading}
-          style={{width:'100%',padding:'13px 0',background:BLUE,color:'#fff',border:'none',borderRadius:10,fontSize:14,fontWeight:700,cursor:loading?'wait':'pointer',fontFamily:'inherit',opacity:loading?.7:1}}>
-          {loading ? 'Entrando...' : 'Entrar'}
-        </button>
+
+        {mode === 'login' ? (
+          <>
+            <div style={{marginBottom:20}}>
+              <label style={{display:'block',fontSize:13,fontWeight:600,color:G[700],marginBottom:6}}>E-mail</label>
+              <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="seu@email.com" onKeyDown={e=>e.key==='Enter'&&handleLogin()}
+                style={{width:'100%',padding:'12px 14px',border:`1px solid ${G[200]}`,borderRadius:10,fontSize:14,outline:'none',fontFamily:'inherit',background:G[50],boxSizing:'border-box'}}/>
+            </div>
+            <div style={{marginBottom:8}}>
+              <label style={{display:'block',fontSize:13,fontWeight:600,color:G[700],marginBottom:6}}>Senha</label>
+              <div style={{position:'relative'}}>
+                <input type={showPass?'text':'password'} value={pass} onChange={e=>setPass(e.target.value)} placeholder="••••••••" onKeyDown={e=>e.key==='Enter'&&handleLogin()}
+                  style={{width:'100%',padding:'12px 44px 12px 14px',border:`1px solid ${G[200]}`,borderRadius:10,fontSize:14,outline:'none',fontFamily:'inherit',background:G[50],boxSizing:'border-box'}}/>
+                <button onClick={()=>setShowPass(!showPass)} type="button"
+                  style={{position:'absolute',right:12,top:'50%',transform:'translateY(-50%)',background:'none',border:'none',cursor:'pointer',color:G[400],padding:2,display:'flex'}}>
+                  {showPass ? (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24"/><line x1="1" y1="1" x2="23" y2="23"/></svg>
+                  ) : (
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                  )}
+                </button>
+              </div>
+            </div>
+            <div style={{textAlign:'right',marginBottom:24}}>
+              <button onClick={()=>{setMode('forgot');setError('');setSuccess('');}} style={{background:'none',border:'none',fontSize:13,color:BLUE,cursor:'pointer',fontFamily:'inherit',fontWeight:500,padding:0}}>
+                Esqueci minha senha
+              </button>
+            </div>
+            {error && <div style={{background:'#fef2f2',border:'1px solid #fecaca',color:'#dc2626',fontSize:13,padding:'10px 14px',borderRadius:8,marginBottom:16,display:'flex',alignItems:'center',gap:8}}><Icon name="alert" size={16}/>{error}</div>}
+            <button onClick={handleLogin} disabled={loading}
+              style={{width:'100%',padding:'13px 0',background:BLUE,color:'#fff',border:'none',borderRadius:10,fontSize:14,fontWeight:700,cursor:loading?'wait':'pointer',fontFamily:'inherit',opacity:loading?.7:1}}>
+              {loading ? 'Entrando...' : 'Entrar'}
+            </button>
+          </>
+        ) : (
+          <>
+            <div style={{marginBottom:24}}>
+              <label style={{display:'block',fontSize:13,fontWeight:600,color:G[700],marginBottom:6}}>E-mail</label>
+              <input type="email" value={email} onChange={e=>setEmail(e.target.value)} placeholder="seu@email.com" onKeyDown={e=>e.key==='Enter'&&handleForgot()}
+                style={{width:'100%',padding:'12px 14px',border:`1px solid ${G[200]}`,borderRadius:10,fontSize:14,outline:'none',fontFamily:'inherit',background:G[50],boxSizing:'border-box'}}/>
+            </div>
+            {error && <div style={{background:'#fef2f2',border:'1px solid #fecaca',color:'#dc2626',fontSize:13,padding:'10px 14px',borderRadius:8,marginBottom:16,display:'flex',alignItems:'center',gap:8}}><Icon name="alert" size={16}/>{error}</div>}
+            {success && <div style={{background:'#f0fdf4',border:'1px solid #bbf7d0',color:'#16a34a',fontSize:13,padding:'10px 14px',borderRadius:8,marginBottom:16}}>{success}</div>}
+            <button onClick={handleForgot} disabled={loading}
+              style={{width:'100%',padding:'13px 0',background:BLUE,color:'#fff',border:'none',borderRadius:10,fontSize:14,fontWeight:700,cursor:loading?'wait':'pointer',fontFamily:'inherit',opacity:loading?.7:1,marginBottom:16}}>
+              {loading ? 'Enviando...' : 'Enviar link de recuperação'}
+            </button>
+            <button onClick={()=>{setMode('login');setError('');setSuccess('');}}
+              style={{width:'100%',padding:'13px 0',background:'transparent',color:G[500],border:`1px solid ${G[200]}`,borderRadius:10,fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+              Voltar ao login
+            </button>
+          </>
+        )}
       </div>
     </div>
   );
