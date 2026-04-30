@@ -456,6 +456,307 @@ function SettingsPage({profile}) {
   );
 }
 
+// ══════════════════════════════════════
+//  FINANCE MODULE
+// ══════════════════════════════════════
+const MONTHS = ['','Janeiro','Fevereiro','Março','Abril','Maio','Junho','Julho','Agosto','Setembro','Outubro','Novembro','Dezembro'];
+
+function FinancePage() {
+  const [view, setView] = useState('geral'); // 'geral' or month number
+  const [transactions, setTransactions] = useState([]);
+  const [goal, setGoal] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [showForm, setShowForm] = useState(false);
+  const [form, setForm] = useState({description:'',amount:'',type:'entrada',month:new Date().getMonth()+1,client_name:'',status:'pago'});
+  const [saving, setSaving] = useState(false);
+
+  const loadData = async () => {
+    const {data:tx} = await supabase.from('finance_transactions').select('*').eq('year',2026).order('month').order('created_at');
+    const {data:gl} = await supabase.from('finance_goals').select('*').eq('year',2026).single();
+    if(tx) setTransactions(tx);
+    if(gl) setGoal(gl);
+    setLoading(false);
+  };
+
+  useEffect(() => { loadData(); }, []);
+
+  const handleSave = async () => {
+    if(!form.description || !form.amount) return;
+    setSaving(true);
+    await supabase.from('finance_transactions').insert({
+      description: form.description,
+      amount: parseFloat(form.amount),
+      type: form.type,
+      month: parseInt(form.month),
+      year: 2026,
+      client_name: form.client_name || null,
+      status: form.status,
+    });
+    setForm({description:'',amount:'',type:'entrada',month:new Date().getMonth()+1,client_name:'',status:'pago'});
+    setShowForm(false);
+    setSaving(false);
+    loadData();
+  };
+
+  const handleDelete = async (id) => {
+    if(!window.confirm('Excluir este lançamento?')) return;
+    await supabase.from('finance_transactions').delete().eq('id', id);
+    loadData();
+  };
+
+  // Calculate monthly summaries
+  const monthly = {};
+  for(let m=1;m<=12;m++) {
+    const mTx = transactions.filter(t=>t.month===m);
+    monthly[m] = {
+      entradas: mTx.filter(t=>t.type==='entrada').reduce((s,t)=>s+Number(t.amount),0),
+      pagar: mTx.filter(t=>t.type==='pagar').reduce((s,t)=>s+Number(t.amount),0),
+      saidas: mTx.filter(t=>t.type==='saida_caixa').reduce((s,t)=>s+Number(t.amount),0),
+    };
+    monthly[m].lucro = monthly[m].entradas - monthly[m].pagar - monthly[m].saidas;
+  }
+
+  const totalEntradas = Object.values(monthly).reduce((s,m)=>s+m.entradas,0);
+  const totalPagar = Object.values(monthly).reduce((s,m)=>s+m.pagar,0);
+  const totalSaidas = Object.values(monthly).reduce((s,m)=>s+m.saidas,0);
+  const totalLucro = totalEntradas - totalPagar - totalSaidas;
+  const targetAmount = goal ? Number(goal.target_amount) : 150000;
+
+  const fmt = (v) => 'R$ ' + Number(v).toLocaleString('pt-BR',{minimumFractionDigits:2});
+
+  if(loading) return <div style={{padding:32,color:G[400]}}>Carregando financeiro...</div>;
+
+  // ── ADD FORM MODAL ──
+  const FormModal = () => (
+    <div style={{position:'fixed',inset:0,background:'rgba(0,0,0,0.4)',display:'flex',alignItems:'center',justifyContent:'center',zIndex:1000}} onClick={()=>setShowForm(false)}>
+      <div style={{background:'#fff',borderRadius:16,padding:32,width:480,maxHeight:'80vh',overflow:'auto'}} onClick={e=>e.stopPropagation()}>
+        <h3 style={{fontSize:18,fontWeight:700,color:G[900],margin:'0 0 24px'}}>Novo lançamento</h3>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
+          <div>
+            <label style={{display:'block',fontSize:12,fontWeight:600,color:G[600],marginBottom:6}}>Tipo</label>
+            <select value={form.type} onChange={e=>setForm({...form,type:e.target.value})}
+              style={{width:'100%',padding:'10px 12px',border:`1px solid ${G[200]}`,borderRadius:8,fontSize:14,fontFamily:'inherit',background:'#fff'}}>
+              <option value="entrada">Entrada</option>
+              <option value="pagar">A Pagar (assinatura)</option>
+              <option value="saida_caixa">Saída Caixa</option>
+            </select>
+          </div>
+          <div>
+            <label style={{display:'block',fontSize:12,fontWeight:600,color:G[600],marginBottom:6}}>Mês</label>
+            <select value={form.month} onChange={e=>setForm({...form,month:e.target.value})}
+              style={{width:'100%',padding:'10px 12px',border:`1px solid ${G[200]}`,borderRadius:8,fontSize:14,fontFamily:'inherit',background:'#fff'}}>
+              {MONTHS.slice(1).map((m,i)=><option key={i+1} value={i+1}>{m}</option>)}
+            </select>
+          </div>
+        </div>
+        <div style={{marginBottom:16}}>
+          <label style={{display:'block',fontSize:12,fontWeight:600,color:G[600],marginBottom:6}}>Descrição</label>
+          <input value={form.description} onChange={e=>setForm({...form,description:e.target.value})} placeholder="Ex: Impressionart, iCloud, MEI..."
+            style={{width:'100%',padding:'10px 12px',border:`1px solid ${G[200]}`,borderRadius:8,fontSize:14,fontFamily:'inherit',boxSizing:'border-box'}}/>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:16,marginBottom:16}}>
+          <div>
+            <label style={{display:'block',fontSize:12,fontWeight:600,color:G[600],marginBottom:6}}>Valor (R$)</label>
+            <input type="number" step="0.01" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} placeholder="0,00"
+              style={{width:'100%',padding:'10px 12px',border:`1px solid ${G[200]}`,borderRadius:8,fontSize:14,fontFamily:'inherit',boxSizing:'border-box'}}/>
+          </div>
+          <div>
+            <label style={{display:'block',fontSize:12,fontWeight:600,color:G[600],marginBottom:6}}>Cliente (opcional)</label>
+            <input value={form.client_name} onChange={e=>setForm({...form,client_name:e.target.value})} placeholder="Nome do cliente"
+              style={{width:'100%',padding:'10px 12px',border:`1px solid ${G[200]}`,borderRadius:8,fontSize:14,fontFamily:'inherit',boxSizing:'border-box'}}/>
+          </div>
+        </div>
+        <div style={{marginBottom:24}}>
+          <label style={{display:'block',fontSize:12,fontWeight:600,color:G[600],marginBottom:6}}>Status</label>
+          <div style={{display:'flex',gap:8}}>
+            {['pago','pendente','atrasado'].map(s=>(
+              <button key={s} onClick={()=>setForm({...form,status:s})}
+                style={{padding:'8px 16px',borderRadius:8,border:`1px solid ${form.status===s?BLUE:G[200]}`,background:form.status===s?BL:'#fff',color:form.status===s?BLUE:G[600],fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',textTransform:'capitalize'}}>
+                {s}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div style={{display:'flex',gap:12,justifyContent:'flex-end'}}>
+          <button onClick={()=>setShowForm(false)} style={{padding:'10px 20px',border:`1px solid ${G[200]}`,borderRadius:8,fontSize:14,fontWeight:600,cursor:'pointer',fontFamily:'inherit',background:'#fff',color:G[600]}}>Cancelar</button>
+          <button onClick={handleSave} disabled={saving} style={{padding:'10px 24px',border:'none',borderRadius:8,fontSize:14,fontWeight:700,cursor:'pointer',fontFamily:'inherit',background:BLUE,color:'#fff',opacity:saving?.7:1}}>{saving?'Salvando...':'Salvar'}</button>
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── GENERAL VIEW ──
+  if(view === 'geral') {
+    return (
+      <div style={{padding:32}}>
+        {showForm && <FormModal/>}
+        {/* Top cards */}
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:24}}>
+          <div/>
+          <button onClick={()=>setShowForm(true)} style={{display:'flex',alignItems:'center',gap:6,background:BLUE,color:'#fff',border:'none',borderRadius:10,padding:'10px 20px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+            <Icon name="plus" size={16}/>Novo lançamento
+          </button>
+        </div>
+        <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:32}}>
+          {[
+            {l:'Entradas',v:fmt(totalEntradas),c:'#10b981'},
+            {l:'A Pagar',v:fmt(totalPagar),c:'#f59e0b'},
+            {l:'Saídas',v:fmt(totalSaidas),c:'#ef4444'},
+            {l:'Lucro',v:fmt(totalLucro),c:totalLucro>=0?'#10b981':'#ef4444'},
+          ].map((c,i)=>(
+            <div key={i} style={{background:'#fff',border:`1px solid ${G[100]}`,borderRadius:12,padding:'20px 22px'}}>
+              <div style={{fontSize:12,color:G[400],fontWeight:500,marginBottom:8,textTransform:'uppercase',letterSpacing:'.06em'}}>{c.l}</div>
+              <span style={{fontSize:22,fontWeight:700,color:c.c}}>{c.v}</span>
+            </div>
+          ))}
+        </div>
+
+        {/* Meta bar */}
+        <div style={{background:'#fff',border:`1px solid ${G[100]}`,borderRadius:12,padding:20,marginBottom:32}}>
+          <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+            <span style={{fontSize:14,fontWeight:700,color:G[800]}}>Meta 2026</span>
+            <span style={{fontSize:13,color:G[400]}}>{fmt(totalEntradas)} / {fmt(targetAmount)}</span>
+          </div>
+          <div style={{width:'100%',height:10,background:G[100],borderRadius:5,overflow:'hidden'}}>
+            <div style={{width:`${Math.min((totalEntradas/targetAmount)*100,100)}%`,height:'100%',background:`linear-gradient(90deg,${BLUE},#6366f1)`,borderRadius:5}}/>
+          </div>
+          <div style={{fontSize:12,color:G[400],marginTop:8}}>{((totalEntradas/targetAmount)*100).toFixed(1)}% — Faltam {fmt(Math.max(targetAmount-totalEntradas,0))}</div>
+        </div>
+
+        {/* Monthly table */}
+        <div style={{background:'#fff',border:`1px solid ${G[100]}`,borderRadius:12,overflow:'hidden'}}>
+          <div style={{padding:'16px 20px',borderBottom:`1px solid ${G[100]}`,display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+            <h3 style={{fontSize:15,fontWeight:700,color:G[800],margin:0}}>Visão Anual — 2026</h3>
+          </div>
+          <table style={{width:'100%',borderCollapse:'collapse',fontSize:13}}>
+            <thead>
+              <tr style={{background:G[50]}}>
+                <th style={{padding:'12px 20px',textAlign:'left',fontWeight:700,color:G[600],fontSize:12,textTransform:'uppercase',letterSpacing:'.05em'}}>Mês</th>
+                <th style={{padding:'12px 20px',textAlign:'right',fontWeight:700,color:'#10b981',fontSize:12}}>Entradas</th>
+                <th style={{padding:'12px 20px',textAlign:'right',fontWeight:700,color:'#f59e0b',fontSize:12}}>A Pagar</th>
+                <th style={{padding:'12px 20px',textAlign:'right',fontWeight:700,color:'#ef4444',fontSize:12}}>Saídas</th>
+                <th style={{padding:'12px 20px',textAlign:'right',fontWeight:700,color:BLUE,fontSize:12}}>Lucro</th>
+                <th style={{padding:'12px 20px',textAlign:'center',fontSize:12}}></th>
+              </tr>
+            </thead>
+            <tbody>
+              {[1,2,3,4,5,6,7,8,9,10,11,12].map(m => {
+                const d = monthly[m];
+                const hasData = d.entradas>0 || d.pagar>0 || d.saidas>0;
+                return (
+                  <tr key={m} style={{borderBottom:`1px solid ${G[50]}`,background:hasData?'#fff':'transparent',opacity:hasData?1:0.4}}>
+                    <td style={{padding:'14px 20px',fontWeight:600,color:G[800]}}>{MONTHS[m]}</td>
+                    <td style={{padding:'14px 20px',textAlign:'right',color:'#10b981',fontWeight:500}}>{d.entradas>0?fmt(d.entradas):'-'}</td>
+                    <td style={{padding:'14px 20px',textAlign:'right',color:'#f59e0b',fontWeight:500}}>{d.pagar>0?fmt(d.pagar):'-'}</td>
+                    <td style={{padding:'14px 20px',textAlign:'right',color:'#ef4444',fontWeight:500}}>{d.saidas>0?fmt(d.saidas):'-'}</td>
+                    <td style={{padding:'14px 20px',textAlign:'right',fontWeight:700,color:d.lucro>=0?'#10b981':'#ef4444'}}>{hasData?fmt(d.lucro):'-'}</td>
+                    <td style={{padding:'14px 20px',textAlign:'center'}}>
+                      {hasData && <button onClick={()=>setView(m)} style={{background:BL,border:'none',borderRadius:6,padding:'6px 12px',fontSize:12,fontWeight:600,color:BLUE,cursor:'pointer',fontFamily:'inherit'}}>Detalhar</button>}
+                    </td>
+                  </tr>
+                );
+              })}
+              <tr style={{background:G[50],fontWeight:700}}>
+                <td style={{padding:'14px 20px',color:G[900]}}>TOTAL</td>
+                <td style={{padding:'14px 20px',textAlign:'right',color:'#10b981'}}>{fmt(totalEntradas)}</td>
+                <td style={{padding:'14px 20px',textAlign:'right',color:'#f59e0b'}}>{fmt(totalPagar)}</td>
+                <td style={{padding:'14px 20px',textAlign:'right',color:'#ef4444'}}>{fmt(totalSaidas)}</td>
+                <td style={{padding:'14px 20px',textAlign:'right',color:totalLucro>=0?'#10b981':'#ef4444'}}>{fmt(totalLucro)}</td>
+                <td></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    );
+  }
+
+  // ── MONTH DETAIL VIEW ──
+  const mNum = parseInt(view);
+  const mTx = transactions.filter(t=>t.month===mNum);
+  const mEntradas = mTx.filter(t=>t.type==='entrada');
+  const mPagar = mTx.filter(t=>t.type==='pagar');
+  const mSaidas = mTx.filter(t=>t.type==='saida_caixa');
+  const mData = monthly[mNum];
+
+  const TxRow = ({tx, color}) => (
+    <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',padding:'12px 0',borderBottom:`1px solid ${G[50]}`}}>
+      <div style={{display:'flex',alignItems:'center',gap:10}}>
+        <span style={{fontSize:13,fontWeight:500,color:G[700]}}>{tx.description}</span>
+        {tx.client_name && <span style={{fontSize:11,color:G[400],background:G[50],padding:'2px 8px',borderRadius:4}}>{tx.client_name}</span>}
+        {tx.status==='pendente' && <span style={{fontSize:10,fontWeight:700,color:'#f59e0b',background:'#fffbeb',padding:'2px 8px',borderRadius:4}}>PENDENTE</span>}
+        {tx.status==='atrasado' && <span style={{fontSize:10,fontWeight:700,color:'#ef4444',background:'#fef2f2',padding:'2px 8px',borderRadius:4}}>ATRASADO</span>}
+      </div>
+      <div style={{display:'flex',alignItems:'center',gap:12}}>
+        <span style={{fontSize:13,fontWeight:600,color}}>{fmt(tx.amount)}</span>
+        <button onClick={()=>handleDelete(tx.id)} style={{background:'none',border:'none',cursor:'pointer',color:G[300],fontSize:16,padding:4}} title="Excluir">×</button>
+      </div>
+    </div>
+  );
+
+  return (
+    <div style={{padding:32}}>
+      {showForm && <FormModal/>}
+      <div style={{display:'flex',alignItems:'center',gap:16,marginBottom:24}}>
+        <button onClick={()=>setView('geral')} style={{background:G[50],border:`1px solid ${G[200]}`,borderRadius:8,padding:'8px 16px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit',color:G[600]}}>← Voltar</button>
+        <h2 style={{fontSize:18,fontWeight:700,color:G[900],margin:0}}>{MONTHS[mNum]} 2026</h2>
+        <button onClick={()=>setShowForm(true)} style={{marginLeft:'auto',display:'flex',alignItems:'center',gap:6,background:BLUE,color:'#fff',border:'none',borderRadius:10,padding:'10px 20px',fontSize:13,fontWeight:600,cursor:'pointer',fontFamily:'inherit'}}>
+          <Icon name="plus" size={16}/>Novo lançamento
+        </button>
+      </div>
+
+      {/* Summary cards */}
+      <div style={{display:'grid',gridTemplateColumns:'repeat(4,1fr)',gap:16,marginBottom:32}}>
+        {[
+          {l:'Entradas',v:fmt(mData.entradas),c:'#10b981'},
+          {l:'A Pagar',v:fmt(mData.pagar),c:'#f59e0b'},
+          {l:'Saídas Caixa',v:fmt(mData.saidas),c:'#ef4444'},
+          {l:'Resumo',v:fmt(mData.lucro),c:mData.lucro>=0?'#10b981':'#ef4444'},
+        ].map((c,i)=>(
+          <div key={i} style={{background:'#fff',border:`1px solid ${G[100]}`,borderRadius:12,padding:'20px 22px'}}>
+            <div style={{fontSize:12,color:G[400],fontWeight:500,marginBottom:8,textTransform:'uppercase',letterSpacing:'.06em'}}>{c.l}</div>
+            <span style={{fontSize:22,fontWeight:700,color:c.c}}>{c.v}</span>
+          </div>
+        ))}
+      </div>
+
+      {/* Three columns like the spreadsheet */}
+      <div style={{display:'grid',gridTemplateColumns:'1fr 1fr 1fr',gap:16}}>
+        {/* Entradas */}
+        <div style={{background:'#fff',border:`1px solid ${G[100]}`,borderRadius:12,padding:20}}>
+          <div style={{fontSize:13,fontWeight:700,color:'#10b981',marginBottom:16,textTransform:'uppercase',letterSpacing:'.06em'}}>Entradas</div>
+          {mEntradas.length===0 ? <div style={{fontSize:13,color:G[400]}}>Nenhuma entrada</div> :
+            mEntradas.map(tx=><TxRow key={tx.id} tx={tx} color="#10b981"/>)}
+          <div style={{marginTop:12,paddingTop:12,borderTop:`2px solid ${G[100]}`,display:'flex',justifyContent:'space-between'}}>
+            <span style={{fontSize:13,fontWeight:700,color:G[800]}}>Total</span>
+            <span style={{fontSize:13,fontWeight:700,color:'#10b981'}}>{fmt(mData.entradas)}</span>
+          </div>
+        </div>
+        {/* A Pagar */}
+        <div style={{background:'#fff',border:`1px solid ${G[100]}`,borderRadius:12,padding:20}}>
+          <div style={{fontSize:13,fontWeight:700,color:'#f59e0b',marginBottom:16,textTransform:'uppercase',letterSpacing:'.06em'}}>A Pagar</div>
+          {mPagar.length===0 ? <div style={{fontSize:13,color:G[400]}}>Nenhuma despesa</div> :
+            mPagar.map(tx=><TxRow key={tx.id} tx={tx} color="#f59e0b"/>)}
+          <div style={{marginTop:12,paddingTop:12,borderTop:`2px solid ${G[100]}`,display:'flex',justifyContent:'space-between'}}>
+            <span style={{fontSize:13,fontWeight:700,color:G[800]}}>Total</span>
+            <span style={{fontSize:13,fontWeight:700,color:'#f59e0b'}}>{fmt(mData.pagar)}</span>
+          </div>
+        </div>
+        {/* Saídas Caixa */}
+        <div style={{background:'#fff',border:`1px solid ${G[100]}`,borderRadius:12,padding:20}}>
+          <div style={{fontSize:13,fontWeight:700,color:'#ef4444',marginBottom:16,textTransform:'uppercase',letterSpacing:'.06em'}}>Saídas Caixa</div>
+          {mSaidas.length===0 ? <div style={{fontSize:13,color:G[400]}}>Nenhuma saída</div> :
+            mSaidas.map(tx=><TxRow key={tx.id} tx={tx} color="#ef4444"/>)}
+          <div style={{marginTop:12,paddingTop:12,borderTop:`2px solid ${G[100]}`,display:'flex',justifyContent:'space-between'}}>
+            <span style={{fontSize:13,fontWeight:700,color:G[800]}}>Total</span>
+            <span style={{fontSize:13,fontWeight:700,color:'#ef4444'}}>{fmt(mData.saidas)}</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Placeholder ──
 function Placeholder({ic,t,d,tg}) {
   return (
@@ -534,8 +835,9 @@ export default function App() {
           <TopBar title={t[0]} subtitle={t[1]}/>
           <div style={{flex:1,overflowY:'auto'}}>
             {page==='dashboard' && <Dashboard profile={profile}/>}
+            {page==='finance' && <FinancePage/>}
             {page==='settings' && <SettingsPage profile={profile}/>}
-            {MODULES[page] && <Placeholder {...MODULES[page]}/>}
+            {MODULES[page] && page!=='finance' && <Placeholder {...MODULES[page]}/>}
           </div>
         </div>
       </div>
